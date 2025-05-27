@@ -1,36 +1,43 @@
-chrome.storage.local.get("extensionEnabled", (data) => {
-  const isEnabled = data.extensionEnabled !== false;
-  if (!isEnabled) return;
+// Utility function to handle storage operations
+const storage = {
+  get: (keys) => new Promise((resolve) => chrome.storage.local.get(keys, resolve))
+};
 
-  chrome.storage.local.get(["predefinedStates", "customNews"], (data) => {
+// Main function to update search query
+const updateSearchQuery = async () => {
+  try {
+    const data = await storage.get(["extensionEnabled", "predefinedStates", "customNews"]);
+    if (data.extensionEnabled === false) return;
+
     const urlParams = new URLSearchParams(window.location.search);
     const q = urlParams.get("q");
     if (!q) return;
 
-    let excludedTerms = [];
+    const excludedTerms = [];
 
-    // Only include checked predefined items
+    // Add predefined exclusions
     const predefined = data.predefinedStates || {};
-    for (const [domain, enabled] of Object.entries(predefined)) {
-      if (enabled) {
-        excludedTerms.push(`-${domain}`);
-      }
-    }
+    Object.entries(predefined)
+      .filter(([, enabled]) => enabled)
+      .forEach(([domain]) => excludedTerms.push(`-${domain}`));
 
-    // Only include checked custom items
+    // Add custom exclusions
     const custom = data.customNews || [];
-    for (const { word, enabled } of custom) {
-      if (enabled) {
-        excludedTerms.push(`-${word}`);
-      }
-    }
+    custom
+      .filter(({ enabled }) => enabled)
+      .forEach(({ word }) => excludedTerms.push(`-${word}`));
 
-    // Avoid duplicate queries
+    // Update URL if needed
     const alreadyExcluded = excludedTerms.every(term => q.includes(term));
     if (!alreadyExcluded && excludedTerms.length) {
       const newQuery = `${q} ${excludedTerms.join(" ")}`.trim();
       urlParams.set("q", newQuery);
       window.location.search = urlParams.toString();
     }
-  });
-});
+  } catch (error) {
+    console.error("Error updating search query:", error);
+  }
+};
+
+// Initialize
+updateSearchQuery();

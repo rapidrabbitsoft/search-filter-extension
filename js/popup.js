@@ -1,4 +1,5 @@
-const predefinedNews = [
+// Constants
+const PREDEFINED_NEWS = [
   ["aljazeera.com", "Al Jazeera"],
   ["apnews.com", "Associated Press"],
   ["bbc.com", "BBC News"],
@@ -17,147 +18,58 @@ const predefinedNews = [
   ["wsj.com", "The Wall Street Journal"]
 ];
 
-const predefinedContainer = document.getElementById("predefinedNews");
-const customContainer = document.getElementById("customNews");
-const newNewsInput = document.getElementById("newNews");
-const addBtn = document.getElementById("addNews");
-const toggleBtn = document.getElementById("toggleExtension");
-const predefinedToggle = document.getElementById("predefinedToggle");
-const customToggle = document.getElementById("customToggle");
+// DOM Elements
+const elements = {
+  predefinedContainer: document.getElementById("predefinedNews"),
+  customContainer: document.getElementById("customNews"),
+  newNewsInput: document.getElementById("newNews"),
+  addBtn: document.getElementById("addNews"),
+  toggleBtn: document.getElementById("toggleExtension"),
+  predefinedToggle: document.getElementById("predefinedToggle"),
+  customToggle: document.getElementById("customToggle")
+};
 
-document.addEventListener("DOMContentLoaded", () => {
-  addBtn.onclick = () => {
-    const word = newNewsInput.value.trim();
-    if (!word) return;
+// Utility Functions
+const storage = {
+  get: (keys) => new Promise((resolve) => chrome.storage.local.get(keys, resolve)),
+  set: (data) => new Promise((resolve) => chrome.storage.local.set(data, resolve))
+};
 
-    chrome.storage.local.get(["customNews", "predefinedStates"], (data = {}) => {
-      const customNews = data.customNews || [];
-      const predefinedStates = data.predefinedStates || [];
-      customNews.push({ word, enabled: true });
-      chrome.storage.local.set({ customNews }, () => {
-        renderNews(predefinedStates || {}, customNews);
-        syncWithPredefinedStates(predefinedStates);
-        syncWithCustomState(customNews);
-        updateSearchQueryLive();
-      });
-      newNewsInput.value = "";
-    });
-  };
-
-  chrome.storage.local.get(["predefinedToggleState", "customToggleState"], (data = {}) => {
-    const predefinedToggleState = data.predefinedToggleState || false;
-    const customToggleState = data.customToggleState || false;
-    predefinedToggle.checked = predefinedToggleState;
-    customToggle.checked = customToggleState;
-  });
-
-  newNewsInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      addBtn.click();
+const updateUI = async () => {
+  const data = await storage.get(["predefinedStates", "customNews", "extensionEnabled"]);
+  const state = data.predefinedStates || {};
+  
+  // Initialize predefined states
+  PREDEFINED_NEWS.forEach(([value]) => {
+    if (typeof state[value] !== "boolean") {
+      state[value] = false;
     }
   });
 
-  chrome.storage.local.get(["predefinedStates", "customNews", "extensionEnabled"], (data = {}) => {
-    const state = data.predefinedStates || {};
-    predefinedNews.forEach(([value]) => {
-      if (typeof state[value] !== "boolean") {
-        state[value] = false;
-      }
-    });
+  await storage.set({ predefinedStates: state });
+  renderNews(state, data.customNews || []);
 
-    chrome.storage.local.set({ predefinedStates: state }, () => {
-      renderNews(state, data.customNews || []);
-    });
-
-    const enabled = data.extensionEnabled !== false;
-    toggleBtn.textContent = enabled ? "✅ Enabled" : "❌ Disabled";
-    toggleBtn.dataset.enabled = enabled;
-  });
-
-  toggleBtn.onclick = () => {
-    const currentState = toggleBtn.dataset.enabled === "true";
-    const newState = !currentState;
-
-    chrome.storage.local.set({ extensionEnabled: newState }, () => {
-      toggleBtn.textContent = newState ? "✅ Enabled" : "❌ Disabled";
-      toggleBtn.dataset.enabled = newState;
-    });
-  };
-
-  predefinedToggle.addEventListener("change", () => {
-    chrome.storage.local.get("extensionEnabled", (data) => {
-      const isEnabled = data.extensionEnabled !== false;
-      if (!isEnabled) return;
-
-      const newState = predefinedToggle.checked;
-      chrome.storage.local.set({ predefinedToggleState: newState });
-
-      chrome.storage.local.get(["predefinedStates", "customNews"], (data) => {
-        const customNews = data.customNews;
-        const predefinedStates = data.predefinedStates || {};
-        for (const [key] of predefinedNews) {
-          predefinedStates[key] = newState;
-        }
-
-        chrome.storage.local.set({ predefinedStates }, () => {
-          renderNews(predefinedStates, customNews);
-          syncWithPredefinedStates(predefinedStates);
-          syncWithCustomState(customNews);
-          updateSearchQueryLive();
-        });
-      });
-    });
-  });
-
-  customToggle.addEventListener("change", () => {
-    chrome.storage.local.get("extensionEnabled", (data) => {
-      const isEnabled = data.extensionEnabled !== false;
-      if (!isEnabled) return;
-
-      const newState = customToggle.checked;
-
-      chrome.storage.local.set({ customToggleState: newState });
-      chrome.storage.local.get(["predefinedStates", "customStates", "customNews"], (data) => {
-        const customNews = data.customNews;
-        for (const item of customNews) {
-          item.enabled = newState;
-        }
-
-        chrome.storage.local.set({ customNews }, () => {
-          renderNews(data.predefinedStates, customNews);
-          updateSearchQueryLive();
-        });
-      });
-    });
-  });
-
-});
-
-function predefinedToggleState(predefinedStates) {
-  const allChecked = Object.values(predefinedStates).every(v => v === true);
-  predefinedToggle.checked = allChecked;
+  const enabled = data.extensionEnabled !== false;
+  elements.toggleBtn.textContent = enabled ? "✅ Enabled" : "❌ Disabled";
+  elements.toggleBtn.dataset.enabled = enabled;
 };
 
-function renderNews(predefinedStates, customNews) {
-  predefinedContainer.innerHTML = "";
-
-  predefinedNews.forEach(([value, name]) => {
+const renderNews = (predefinedStates, customNews) => {
+  // Render predefined news
+  elements.predefinedContainer.innerHTML = "";
+  PREDEFINED_NEWS.forEach(([value, name]) => {
     const wrapper = document.createElement("div");
     wrapper.className = "form-check ps-0";
-
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.className = "form-check-input";
     checkbox.id = `predef-${value}`;
     checkbox.checked = !!predefinedStates[value];
-    checkbox.addEventListener("change", () => {
+    checkbox.addEventListener("change", async () => {
       predefinedStates[value] = checkbox.checked;
-      chrome.storage.local.set({ predefinedStates });
-      syncWithPredefinedStates(predefinedStates);
-      syncWithCustomState(customNews);
-      updateSearchQueryLive();
+      await storage.set({ predefinedStates });
+      await updateSearchQueryLive();
     });
 
     const label = document.createElement("label");
@@ -165,12 +77,12 @@ function renderNews(predefinedStates, customNews) {
     label.setAttribute("for", checkbox.id);
     label.textContent = name;
 
-    wrapper.appendChild(checkbox);
-    wrapper.appendChild(label);
-    predefinedContainer.appendChild(wrapper);
+    wrapper.append(checkbox, label);
+    elements.predefinedContainer.appendChild(wrapper);
   });
 
-  customContainer.innerHTML = "";
+  // Render custom news
+  elements.customContainer.innerHTML = "";
   if (Array.isArray(customNews)) {
     customNews.forEach((obj, index) => {
       const container = document.createElement("div");
@@ -180,85 +92,145 @@ function renderNews(predefinedStates, customNews) {
       checkbox.type = "checkbox";
       checkbox.className = "form-check-input";
       checkbox.checked = obj.enabled;
-      checkbox.addEventListener("change", () => {
+      checkbox.addEventListener("change", async () => {
         customNews[index].enabled = checkbox.checked;
-        chrome.storage.local.set({ customNews });
-        syncWithPredefinedStates(predefinedStates);
-        syncWithCustomState(customNews);
-        updateSearchQueryLive();
+        await storage.set({ customNews });
+        await updateSearchQueryLive();
       });
 
       const wordSpan = document.createElement("span");
       wordSpan.textContent = obj.word;
 
       const removeBtn = document.createElement("button");
-      removeBtn.textContent = "x";
+      removeBtn.textContent = "×";
       removeBtn.className = "btn btn-sm text-danger m-0 p-0";
-      removeBtn.onclick = () => {
+      removeBtn.onclick = async () => {
         customNews.splice(index, 1);
-        chrome.storage.local.set({ customNews }, () => {
-          renderNews(predefinedStates, customNews);
-          syncWithPredefinedStates(predefinedStates);
-          syncWithCustomState(customNews);
-          updateSearchQueryLive();
-        });
+        await storage.set({ customNews });
+        renderNews(predefinedStates, customNews);
+        await updateSearchQueryLive();
       };
-      container.appendChild(checkbox);
-      container.appendChild(wordSpan);
-      container.appendChild(removeBtn);
-      customContainer.appendChild(container);
+
+      container.append(checkbox, wordSpan, removeBtn);
+      elements.customContainer.appendChild(container);
     });
-  };
-}
+  }
+};
 
-function syncWithPredefinedStates(predefinedStates) {
-  const allChecked = Object.values(predefinedStates).every(v => v === true);
-  predefinedToggle.checked = allChecked;
-  chrome.storage.local.set({ predefinedToggleState: allChecked });
-}
+const updateSearchQueryLive = async () => {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tabs.length) return;
 
-function syncWithCustomState(customNews) {
-  const allChecked = customNews.every(item => item.enabled);
-  customToggle.checked = allChecked;
-  chrome.storage.local.set({ customToggleState: allChecked });
-}
+  const tabId = tabs[0].id;
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: async () => {
+      const data = await chrome.storage.local.get(["predefinedStates", "customNews", "extensionEnabled"]);
+      if (data.extensionEnabled === false) return;
 
-function updateSearchQueryLive() {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tabId = tabs[0].id;
+      const urlParams = new URLSearchParams(window.location.search);
+      const q = urlParams.get("q");
+      if (!q) return;
 
-    chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        chrome.storage.local.get(["predefinedStates", "customNews", "extensionEnabled"], (data) => {
-          if (data.extensionEnabled === false) return;
+      const cleanedQuery = q
+        .split(/\s+/)
+        .filter(part => !part.startsWith("-") && !/^-[^\s]+/.test(part))
+        .join(" ");
 
-          const urlParams = new URLSearchParams(window.location.search);
-          let q = urlParams.get("q");
-          if (!q) return;
+      const excludedTerms = [];
 
-          const cleanedQuery = q
-            .split(/\s+/)
-            .filter(part => !part.startsWith("-") && !/^-[^\s]+/.test(part))
-            .join(" ");
+      // Add predefined exclusions
+      const predefined = data.predefinedStates || {};
+      Object.entries(predefined)
+        .filter(([, enabled]) => enabled)
+        .forEach(([domain]) => excludedTerms.push(`-${domain}`));
 
-          let excludedTerms = [];
+      // Add custom exclusions
+      const custom = data.customNews || [];
+      custom
+        .filter(({ enabled }) => enabled)
+        .forEach(({ word }) => excludedTerms.push(`-${word}`));
 
-          const predefined = data.predefinedStates || {};
-          for (const [domain, enabled] of Object.entries(predefined)) {
-            if (enabled) excludedTerms.push(`-${domain}`);
-          }
-
-          const custom = data.customNews || [];
-          for (const { word, enabled } of custom) {
-            if (enabled) excludedTerms.push(`-${word}`);
-          }
-
-          const newQuery = `${cleanedQuery} ${excludedTerms.join(" ")}`.trim();
-          urlParams.set("q", newQuery);
-          window.location.search = urlParams.toString();
-        });
+      // Update URL if needed
+      const alreadyExcluded = excludedTerms.every(term => q.includes(term));
+      if (!alreadyExcluded && excludedTerms.length) {
+        const newQuery = `${cleanedQuery} ${excludedTerms.join(" ")}`.trim();
+        urlParams.set("q", newQuery);
+        window.location.search = urlParams.toString();
       }
-    });
+    }
   });
-}
+};
+
+// Event Listeners
+document.addEventListener("DOMContentLoaded", async () => {
+  // Initialize UI
+  await updateUI();
+
+  // Add news handler
+  elements.addBtn.onclick = async () => {
+    const word = elements.newNewsInput.value.trim();
+    if (!word) return;
+
+    const data = await storage.get(["customNews", "predefinedStates"]);
+    const customNews = data.customNews || [];
+    customNews.push({ word, enabled: true });
+    
+    await storage.set({ customNews });
+    renderNews(data.predefinedStates || {}, customNews);
+    await updateSearchQueryLive();
+    elements.newNewsInput.value = "";
+  };
+
+  // Enter key handler
+  elements.newNewsInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      elements.addBtn.click();
+    }
+  });
+
+  // Toggle extension handler
+  elements.toggleBtn.onclick = async () => {
+    const currentState = elements.toggleBtn.dataset.enabled === "true";
+    const newState = !currentState;
+    
+    await storage.set({ extensionEnabled: newState });
+    elements.toggleBtn.textContent = newState ? "✅ Enabled" : "❌ Disabled";
+    elements.toggleBtn.dataset.enabled = newState;
+  };
+
+  // Predefined toggle handler
+  elements.predefinedToggle.addEventListener("change", async () => {
+    const data = await storage.get(["extensionEnabled", "predefinedStates", "customNews"]);
+    if (data.extensionEnabled === false) return;
+
+    const newState = elements.predefinedToggle.checked;
+    await storage.set({ predefinedToggleState: newState });
+
+    const predefinedStates = data.predefinedStates || {};
+    PREDEFINED_NEWS.forEach(([key]) => {
+      predefinedStates[key] = newState;
+    });
+
+    await storage.set({ predefinedStates });
+    renderNews(predefinedStates, data.customNews);
+    await updateSearchQueryLive();
+  });
+
+  // Custom toggle handler
+  elements.customToggle.addEventListener("change", async () => {
+    const data = await storage.get(["extensionEnabled", "customNews"]);
+    if (data.extensionEnabled === false) return;
+
+    const newState = elements.customToggle.checked;
+    await storage.set({ customToggleState: newState });
+
+    const customNews = data.customNews || [];
+    customNews.forEach(item => item.enabled = newState);
+
+    await storage.set({ customNews });
+    renderNews(data.predefinedStates || {}, customNews);
+    await updateSearchQueryLive();
+  });
+});
